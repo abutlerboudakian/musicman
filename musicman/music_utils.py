@@ -16,7 +16,7 @@ def get_audio(src: str, path: str, *args):
     link: str = get_first_yt_link(kw)
 
     if link:
-        audio_dl = YoutubeDL({'format': '250', 'outtmpl': f'{path}%(title)s.%(ext)s'})
+        audio_dl = YoutubeDL({'format': 'bestaudio', 'extractaudio': True, 'audioformat': 'opus', 'outtmpl': f'{path}%(title)s.%(ext)s'})
         resp = audio_dl.extract_info(link)
         return f'{path}{resp["title"]}.{resp["ext"]}'
 
