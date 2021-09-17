@@ -170,7 +170,7 @@ async def remove(ctx: commands.Context, idx: int, *args):
     if len(queue) > 0:
         if idx:
             try:
-                queue.remove(queue[idx])
+                queue.remove(queue[idx-1])
             except Exception:
                 await ctx.send(f'Invalid index {idx}')
         else:
@@ -226,14 +226,14 @@ async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
 
     if len(queue) > 0:
         if not end_idx:
-            end_idx = 0
+            end_idx = 1
 
         if start_idx:
 
             try:
-                qe = queue[start_idx]
+                qe = queue[start_idx-1]
                 queue.remove(qe)
-                queue.insert(end_idx, qe)
+                queue.insert(end_idx-1, qe)
                 await ctx.send(f'Queue index {start_idx} moved to {end_idx}')
             except Exception:
                 await ctx.send('Invalid start or end index provided')
@@ -252,7 +252,7 @@ async def skipto(ctx: commands.Context, idx: int, *args):
     global now_playing
 
     try:
-        qe = queue[idx]
+        qe = queue[idx-1]
 
         while now_playing != qe:
             skip(ctx)
@@ -322,45 +322,8 @@ async def view_queue(ctx: commands.Context, *args):
     else:
         await ctx.send('Queue empty')
 
-# command_map = {
-#     'play': play,
-#     'disconnect': None,
-#     'np': None,
-#     'aliases': None,
-#     'ping': None,
-#     'skip': None,
-#     'seek': None,
-#     'SoundCloud': None,
-#     'remove': None,
-#     'loopqueue': None,
-#     'search': None,
-#     'stats': None,
-#     'loop': None,
-#     'join': connect,
-#     'lyrics': None,
-#     'info': None,
-#     'resume': None,
-#     'settings': None,
-#     'move': None,
-#     'forward': None,
-#     'skipto': None,
-#     'clear': None,
-#     'replay': None,
-#     'clean': None,
-#     'pause': None,
-#     'removedupes': None,
-#     'volume': None,
-#     'rewind': None,
-#     'playtop': None,
-#     'playskip': None,
-#     'invite': None,
-#     'shuffle': None,
-#     'queue': None,
-#     'leavecleanup': None,
-#     'africa': africa,
-# }
 
-
+# Easter egg commands
 @bot.command(name='africa')   
 async def africa(ctx: commands.Context, *args):
 
