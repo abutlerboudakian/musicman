@@ -3,7 +3,6 @@ import os
 import random
 import discord
 from discord.ext import commands
-from discord.player import FFmpegOpusAudio
 from dotenv import load_dotenv
 from pytimeparse.timeparse import timeparse
 from musicman.music_utils import get_audio
@@ -12,18 +11,26 @@ from musicman.music_utils import get_audio
 class QueueEntry:
 
     author: discord.User
-    audio: discord.FFmpegOpusAudio
+    url: str
+    audio: discord.FFmpegPCMAudio
+    title: str
 
-    def __init__(self, author: discord.User, audio: discord.FFmpegOpusAudio, fname: str):
+    def __init__(
+        self, author: discord.User, url: str, audio: discord.FFmpegPCMAudio, title: str
+    ):
         self.author = author
+        self.url = url
         self.audio = audio
-        self.fname = fname
+        self.title = title
 
 
 load_dotenv()
 TOKEN = os.getenv('ACCESS_TOKEN')
-OUT_PATH = os.getenv('TMP_AUDIO_PATH')
 
+def ffmpeg_options(seek: int = None):
+    if seek:
+        return {'before_options': f'-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {seek}', 'options': '-vn'}
+    return {'before_options': f'-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
 
 bot = commands.Bot(command_prefix='!')
 voiceclient: discord.VoiceClient = None
@@ -35,6 +42,9 @@ def play_next(error):
     global now_playing
     global voiceclient
     global queue
+
+    print(error)
+
     if len(queue) > 0:
         now_playing = queue.pop(0)
         voiceclient.play(now_playing.audio, after=play_next)
@@ -59,20 +69,22 @@ async def play(ctx: commands.Context, src: str, *args):
     global voiceclient
     global queue
     global now_playing
-    global OUT_PATH
     if not voiceclient:
         await connect(ctx, *args)
     if voiceclient:
-        fname: str = get_audio(src, OUT_PATH, *args)
-        if fname:
-            audio = discord.FFmpegOpusAudio(fname, codec='copy')
+        resp: dict = get_audio(src, *args)
+        if resp:
+            url = resp['formats'][0]['url']
+            audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
             if voiceclient.is_playing():
-                queue.append(QueueEntry(ctx.author, audio, fname))
-                await ctx.send(f'Added to queue (Position {len(queue)})')
+                queue.append(QueueEntry(ctx.author, url, audio, resp['title']))
+                await ctx.send(f'Added "{resp["title"]}" to queue (Position {len(queue)}). Link: {resp["webpage_url"]}')
             else:
-                now_playing = QueueEntry(ctx.author, audio, fname)
+                now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
                 voiceclient.play(audio, after=play_next)
-                await ctx.send('Now Playing!')
+                await ctx.send(f'Now Playing "{resp["title"]}"! Link: {resp["webpage_url"]}')
+        else:
+            await ctx.send('No song found that matches keywords...')
     else:
         await ctx.send("musicman can't get in...")
 
@@ -116,8 +128,8 @@ async def seek(ctx: commands.Context, timestamp: str, *args):
     if voiceclient and voiceclient.is_playing():
         try:
             td_ts = int(timeparse(timestamp))
-            audio = FFmpegOpusAudio(now_playing.fname, codec='copy', before_options=f'-ss {td_ts}')
-            queue.insert(0, QueueEntry(now_playing.author, audio, now_playing.fname))
+            audio = discord.FFmpegPCMAudio(now_playing.url, **ffmpeg_options(td_ts))
+            queue.insert(0, QueueEntry(now_playing.author, now_playing.url, audio, now_playing.title))
             voiceclient.stop()
             play_next(None)
             await ctx.send(f'Seeked to {timestamp}')
@@ -133,7 +145,9 @@ async def remove(ctx: commands.Context, idx: int, *args):
     if len(queue) > 0:
         if idx:
             try:
+                removed = queue[idx-1]
                 queue.remove(queue[idx-1])
+                await ctx.send(f'Removed "{removed.title}" at position {idx}')
             except Exception:
                 await ctx.send(f'Invalid index {idx}')
         else:
@@ -155,9 +169,10 @@ async def join(ctx: commands.Context, *args):
 @bot.command(name='pause', help='Pauses the currently playing track')
 async def pause(ctx: commands.Context, *args):
     global voiceclient
+    global now_playing
     if voiceclient and voiceclient.is_playing():
         voiceclient.pause()
-        await ctx.send('Paused')
+        await ctx.send(f'Paused "{now_playing.title}"')
     else:
         await ctx.send('Nothing to pause, queue up another song!')
 
@@ -165,9 +180,10 @@ async def pause(ctx: commands.Context, *args):
 @bot.command(name='resume', help='Resume paused music')
 async def resume(ctx: commands.Context, *args):
     global voiceclient
+    global now_playing
     if voiceclient and voiceclient.is_paused():
         voiceclient.resume()
-        await ctx.send('Resumed')
+        await ctx.send(f'Resumed "{now_playing.title}"')
     else:
         await ctx.send('Nothing to resume, queue up another song!')
 
@@ -183,7 +199,7 @@ async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
                 qe = queue[start_idx-1]
                 queue.remove(qe)
                 queue.insert(end_idx-1, qe)
-                await ctx.send(f'Queue index {start_idx} moved to {end_idx}')
+                await ctx.send(f'"{qe.title}" moved from {start_idx} to {end_idx}')
             except Exception:
                 await ctx.send('Invalid start or end index provided')
      
@@ -200,8 +216,8 @@ async def skipto(ctx: commands.Context, idx: int, *args):
     try:
         qe = queue[idx-1]
         while now_playing != qe:
-            skip(ctx)
-        await ctx.send(f'Skipped to queue index {idx}')
+             await skip(ctx)
+        await ctx.send(f'Skipped to "{now_playing.title}" at position {idx}')
     except Exception:
         await ctx.send(f'Invalid index {idx}')
 
@@ -221,11 +237,11 @@ async def replay(ctx: commands.Context, *args):
 @bot.command(name='removedupes', help='Removes duplicate songs from the queue.')
 async def removedupes(ctx: commands.Context, *args):
     global queue
-    fnames = set()
+    urls = set()
     n_queue = []
     for q in queue:
-        if q.fname not in fnames:
-            fnames.add(q.fname)
+        if q.url not in urls:
+            urls.add(q.url)
             n_queue.append(q)
     queue = n_queue
     await ctx.send('Duplicates removed')
@@ -245,7 +261,7 @@ async def view_queue(ctx: commands.Context, *args):
         embed = discord.Embed()
         embed.title = 'Queue'
         for i in range(len(queue)):
-            embed.add_field(name=f'Position {i+1}', value=queue[i].fname.split('\\')[-1].split('.')[0], inline=False)
+            embed.add_field(name=f'Position {i+1}', value=queue[i].title, inline=False)
         await ctx.send(embed=embed)
     else:
         await ctx.send('Queue empty')
@@ -256,6 +272,12 @@ async def view_queue(ctx: commands.Context, *args):
 async def africa(ctx: commands.Context, *args):
     await play(ctx, 'africa')
     await ctx.send(';)')
+
+
+@bot.command(name='test')
+async def test(ctx: commands.Context, *args):
+    await play(ctx, 'hello world')
+    await ctx.send('Hello world!')
 
 
 @bot.command(name='ross')   
