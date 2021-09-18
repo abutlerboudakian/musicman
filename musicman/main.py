@@ -68,8 +68,8 @@ ls = LoopState.OFF
 
 
 def play_next(error):
-    global now_playing
     global voiceclient
+    global now_playing
     global queue
     global ls
 
@@ -85,24 +85,9 @@ def play_next(error):
         else:
             now_playing = None
     else:
+        audio = discord.FFmpegOpusAudio(now_playing.url, **ffmpeg_options())
+        now_playing.audio = audio
         voiceclient.play(now_playing.audio, after=play_next)
-
-
-# Event Listeners
-@bot.event
-async def on_disconnect():
-    global now_playing
-    global voiceclient
-    global queue
-    global ls
-
-    
-    queue.clear()
-    ls = LoopState.OFF
-    if voiceclient:
-        voiceclient.stop()
-        await voiceclient.disconnect()
-        voiceclient = None
 
 
 # Main Commands
@@ -114,8 +99,6 @@ async def connect(ctx: commands.Context, *args):
     if channel:
         voiceclient = await channel.connect()
         await ctx.send(f'musicman connected to {channel.name}')
-        if len(queue) > 0:
-            play_next(None)
     else:
         await ctx.send(f'{ctx.author.name} is not in a voice channel')
 
@@ -153,6 +136,10 @@ async def disconnect(ctx: commands.Context, *args):
     global now_playing
     global ls
 
+    for vc in bot.voice_clients:
+        await vc.disconnect()
+        vc.cleanup()
+
     queue.clear()
     if voiceclient:
         if voiceclient.is_playing() or voiceclient.is_paused():
@@ -160,6 +147,7 @@ async def disconnect(ctx: commands.Context, *args):
             voiceclient.stop()
         await ctx.send(f'Disconnected from {voiceclient.channel.name}')
         await voiceclient.disconnect()
+        voiceclient.cleanup()
         voiceclient = None
 
 
@@ -409,19 +397,19 @@ async def leavecleanup(ctx: commands.Context, src: str, *args):
 
 
 # Easter egg commands
-@bot.command(name='africa')   
+@bot.command(name='africa', hidden=True)   
 async def africa(ctx: commands.Context, *args):
     await play(ctx, 'africa')
     await ctx.send(';)')
 
 
-@bot.command(name='test')
+@bot.command(name='test', hidden=True)
 async def test(ctx: commands.Context, *args):
     await play(ctx, 'hello world')
     await ctx.send('Hello world!')
 
 
-@bot.command(name='ross')   
+@bot.command(name='ross', hidden=True)   
 async def ross(ctx: commands.Context, *args):
     await play(ctx, '"BUSHES OF LOVE" -- Extended Lyric Video')
     await ctx.send('For daddy Ross <3')
