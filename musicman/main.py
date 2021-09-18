@@ -378,7 +378,7 @@ async def view_queue(ctx: commands.Context, *args):
 
 
 @bot.command(name='leavecleanup', help='Removes absent user’s songs from the Queue.')
-async def leavecleanup(ctx: commands.Context, src: str, *args):
+async def leavecleanup(ctx: commands.Context, *args):
     global voiceclient
     global queue
     global now_playing
