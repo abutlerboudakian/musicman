@@ -1,4 +1,3 @@
-from datetime import datetime as dt
 from enum import Enum
 import os
 import random
@@ -23,7 +22,8 @@ class QueueEntry:
     title: str
 
     def __init__(
-        self, author: discord.User, url: str, audio: discord.FFmpegPCMAudio, title: str
+        self, author: discord.User, url: str,
+        audio: discord.FFmpegPCMAudio, title: str
     ):
         self.author = author
         self.url = url
@@ -36,7 +36,7 @@ load_dotenv()
 # Constants
 TOKEN = os.getenv('ACCESS_TOKEN')
 YDL_OPTIONS = {
-    'format': 'bestaudio', 'noplaylist':'True',
+    'format': 'bestaudio', 'noplaylist': 'True',
     'username': os.getenv('YT_USERNAME'), 'password': os.getenv('YT_PASSWORD'),
     'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
 }
@@ -47,20 +47,34 @@ def get_audio(src: str, *args):
     kw: str = ' '.join([src, *args])
     try:
         audio_dl = YoutubeDL(YDL_OPTIONS)
-        resp = audio_dl.extract_info(f'ytsearch:{kw}', download=False)['entries'][0]
+        resp = audio_dl.extract_info(
+            f'ytsearch:{kw}', download=False
+        )['entries'][0]
         return resp
-    except:
+    except Exception:
         return None
 
 
 def ffmpeg_options(seek: int = None):
     if seek:
-        return {'before_options': f'-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -ss {seek}', 'options': '-vn'}
-    return {'before_options': f'-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5', 'options': '-vn'}
+        return {
+            'before_options': (
+                '-reconnect 1 -reconnect_streamed 1 '
+                f'-reconnect_delay_max 5 -ss {seek}'
+            ), 'options': '-vn'
+        }
+    return {
+        'before_options': (
+            '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
+        ), 'options': '-vn'
+    }
 
 
 # Globals
-bot = commands.Bot(command_prefix='!')
+bot = commands.Bot(
+    command_prefix='!',
+    help_command=commands.DefaultHelpCommand(no_category='Commands')
+)
 voiceclient: discord.VoiceClient = None
 queue: list[QueueEntry] = []
 now_playing: QueueEntry = None
@@ -75,7 +89,6 @@ def play_next(error):
 
     print(error)
 
-    
     if ls != LoopState.NOW_PLAYING:
         if len(queue) > 0:
             if ls == LoopState.QUEUE:
@@ -91,7 +104,10 @@ def play_next(error):
 
 
 # Main Commands
-@bot.command(name='connect', help='Summons the bot to your voice channel.', aliases=('join',))
+@bot.command(
+    name='connect', help='Summons the bot to your voice channel.',
+    aliases=('join',)
+)
 async def connect(ctx: commands.Context, *args):
     global voiceclient
     global queue
@@ -118,18 +134,28 @@ async def play(ctx: commands.Context, src: str, *args):
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
             if voiceclient.is_playing() or voiceclient.is_paused():
                 queue.append(QueueEntry(ctx.author, url, audio, resp['title']))
-                await ctx.send(f'Added "{resp["title"]}" to queue (Position {len(queue)}).{CRLF}Link: {resp["webpage_url"]}')
+                await ctx.send(
+                    f'Added "{resp["title"]}" to queue (Position '
+                    f'{len(queue)}).{CRLF}Link: {resp["webpage_url"]}'
+                )
             else:
                 now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
                 voiceclient.play(audio, after=play_next)
-                await ctx.send(f'Now Playing "{resp["title"]}"!{CRLF}Link: {resp["webpage_url"]}')
+                await ctx.send(
+                    f'Now Playing "{resp["title"]}"!{CRLF}'
+                    f'Link: {resp["webpage_url"]}'
+                )
         else:
             await ctx.send('No song found that matches keywords...')
     else:
         await ctx.send("musicman can't get in...")
 
 
-@bot.command(name='disconnect', help='Disconnect the bot from the voice channel it is in.', aliases=('leave',))
+@bot.command(
+    name='disconnect',
+    help='Disconnect the bot from the voice channel it is in.',
+    aliases=('leave',)
+)
 async def disconnect(ctx: commands.Context, *args):
     global voiceclient
     global queue
@@ -151,7 +177,11 @@ async def disconnect(ctx: commands.Context, *args):
         voiceclient = None
 
 
-@bot.command(name='np', help='Shows what song the bot is currently playing.', aliases=('nowplaying',))
+@bot.command(
+    name='np',
+    help='Shows what song the bot is currently playing.',
+    aliases=('nowplaying',)
+)
 async def np(ctx: commands.Context, *args):
     global now_playing
     if now_playing:
@@ -176,15 +206,24 @@ async def skip(ctx: commands.Context, *args):
         await ctx.send('Nothing playing to skip')
 
 
-@bot.command(name='seek', help='Seeks to a certain point in the current track.')
+@bot.command(
+    name='seek', help='Seeks to a certain point in the current track.'
+)
 async def seek(ctx: commands.Context, timestamp: str, *args):
     global voiceclient
     global now_playing
     if voiceclient.is_playing() or voiceclient.is_paused():
         try:
             td_ts = int(timeparse(timestamp))
-            audio = discord.FFmpegPCMAudio(now_playing.url, **ffmpeg_options(td_ts))
-            queue.insert(0, QueueEntry(now_playing.author, now_playing.url, audio, now_playing.title))
+            audio = discord.FFmpegPCMAudio(
+                now_playing.url, **ffmpeg_options(td_ts)
+            )
+            queue.insert(
+                0, QueueEntry(
+                    now_playing.author, now_playing.url, audio,
+                    now_playing.title
+                )
+            )
             voiceclient.stop()
             await ctx.send(f'Seeked to {timestamp}')
         except Exception:
@@ -218,7 +257,7 @@ async def loopqueue(ctx: commands.Context, *args):
 
 
 @bot.command(name='loop', help='Loop the currently playing song.')
-async def loopqueue(ctx: commands.Context, *args):
+async def loop(ctx: commands.Context, *args):
     global now_playing
     global ls
 
@@ -264,7 +303,13 @@ async def resume(ctx: commands.Context, *args):
         await ctx.send('Nothing to resume, queue up another song!')
 
 
-@bot.command(name='move', help='Moves a certain song to the first position in the queue or to a chosen position')
+@bot.command(
+    name='move',
+    help=(
+        'Moves a certain song to the first position in the queue or to '
+        'a chosen position'
+    )
+)
 async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
     global queue
     if len(queue) > 0:
@@ -275,10 +320,12 @@ async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
                 qe = queue[start_idx-1]
                 queue.remove(qe)
                 queue.insert(end_idx-1, qe)
-                await ctx.send(f'"{qe.title}" moved from {start_idx} to {end_idx}')
+                await ctx.send(
+                    f'"{qe.title}" moved from {start_idx} to {end_idx}'
+                )
             except Exception:
                 await ctx.send('Invalid start or end index provided')
-     
+
         else:
             await ctx.send('No start index provided')
     else:
@@ -318,7 +365,9 @@ async def clean(ctx: commands.Context, *args):
     await ctx.send('Removed all messages sent by musicman!')
 
 
-@bot.command(name='removedupes', help='Removes duplicate songs from the queue.')
+@bot.command(
+    name='removedupes', help='Removes duplicate songs from the queue.'
+)
 async def removedupes(ctx: commands.Context, *args):
     global queue
     urls = set()
@@ -331,7 +380,9 @@ async def removedupes(ctx: commands.Context, *args):
     await ctx.send('Duplicates removed')
 
 
-@bot.command(name='playtop', help='Like the play command, but queues from the top.')
+@bot.command(
+    name='playtop', help='Like the play command, but queues from the top.'
+)
 async def playtop(ctx: commands.Context, src: str, *args):
     global voiceclient
     global queue
@@ -345,19 +396,30 @@ async def playtop(ctx: commands.Context, src: str, *args):
             url = resp['formats'][0]['url']
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
             if voiceclient.is_playing() or voiceclient.is_paused():
-                queue.insert(0, QueueEntry(ctx.author, url, audio, resp['title']))
-                await ctx.send(f'Added "{resp["title"]}" to queue (Position 1).{CRLF}Link: {resp["webpage_url"]}')
+                queue.insert(
+                    0, QueueEntry(ctx.author, url, audio, resp['title'])
+                )
+                await ctx.send(
+                    f'Added "{resp["title"]}" to queue (Position 1).{CRLF}'
+                    f'Link: {resp["webpage_url"]}'
+                )
             else:
                 now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
                 voiceclient.play(audio, after=play_next)
-                await ctx.send(f'Now Playing "{resp["title"]}"!{CRLF}Link: {resp["webpage_url"]}')
+                await ctx.send(
+                    f'Now Playing "{resp["title"]}"!{CRLF}'
+                    f'Link: {resp["webpage_url"]}'
+                )
         else:
             await ctx.send('No song found that matches keywords...')
     else:
         await ctx.send("musicman can't get in...")
 
 
-@bot.command(name='playskip', help='Adds a song to the top of the queue then skips to it.')
+@bot.command(
+    name='playskip',
+    help='Adds a song to the top of the queue then skips to it.'
+)
 async def playskip(ctx: commands.Context, src: str, *args):
     global queue
     await playtop(ctx, src, *args)
@@ -379,13 +441,17 @@ async def view_queue(ctx: commands.Context, *args):
         embed = discord.Embed()
         embed.title = 'Queue'
         for i in range(len(queue)):
-            embed.add_field(name=f'Position {i+1}', value=queue[i].title, inline=False)
+            embed.add_field(
+                name=f'Position {i+1}', value=queue[i].title, inline=False
+            )
         await ctx.send(embed=embed)
     else:
         await ctx.send('Queue empty')
 
 
-@bot.command(name='leavecleanup', help='Removes absent user’s songs from the Queue.')
+@bot.command(
+    name='leavecleanup', help='Removes absent user’s songs from the Queue.'
+)
 async def leavecleanup(ctx: commands.Context, *args):
     global voiceclient
     global queue
@@ -401,11 +467,10 @@ async def leavecleanup(ctx: commands.Context, *args):
             await skip(ctx, *args)
 
         await ctx.send('Removed all songs submitted by absent users')
-            
 
 
 # Easter egg commands
-@bot.command(name='africa', hidden=True)   
+@bot.command(name='africa', hidden=True)
 async def africa(ctx: commands.Context, *args):
     await play(ctx, 'africa')
     await ctx.send(';)')
@@ -417,7 +482,7 @@ async def test(ctx: commands.Context, *args):
     await ctx.send('Hello world!')
 
 
-@bot.command(name='ross', hidden=True)   
+@bot.command(name='ross', hidden=True)
 async def ross(ctx: commands.Context, *args):
     await play(ctx, '"BUSHES OF LOVE" -- Extended Lyric Video')
     await ctx.send('For daddy Ross <3')
