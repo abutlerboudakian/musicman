@@ -75,14 +75,17 @@ def play_next(error):
 
     print(error)
 
-    if len(queue) > 0:
-        if ls != LoopState.NOW_PLAYING:
+    
+    if ls != LoopState.NOW_PLAYING:
+        if len(queue) > 0:
             if ls == LoopState.QUEUE:
                 queue.append(now_playing)
             now_playing = queue.pop(0)
-        voiceclient.play(now_playing.audio, after=play_next)
+            voiceclient.play(now_playing.audio, after=play_next)
+        else:
+            now_playing = None
     else:
-        now_playing = None
+        voiceclient.play(now_playing.audio, after=play_next)
 
 
 # Event Listeners
@@ -230,8 +233,20 @@ async def loopqueue(ctx: commands.Context, *args):
 async def loopqueue(ctx: commands.Context, *args):
     global now_playing
     global ls
-    ls = LoopState.NOW_PLAYING
-    await ctx.send(f'"{now_playing.title}" loop enabled')
+
+    if now_playing:
+        ls = LoopState.NOW_PLAYING
+        await ctx.send(f'"{now_playing.title}" loop enabled')
+    else:
+        await ctx.send('Nothing playing to loop')
+
+
+@bot.command(name='noloop', help='Stop looping')
+async def noloop(ctx: commands.Context, *args):
+    global ls
+
+    ls = LoopState.OFF
+    await ctx.send('Looping disabled')
 
 
 @bot.command(name='donate', help='Don\'t actually give me money please')
