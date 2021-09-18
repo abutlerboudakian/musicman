@@ -310,6 +310,14 @@ async def replay(ctx: commands.Context, *args):
     await seek(ctx, '00:00', *args)
 
 
+@bot.command(name='clean', help='Deletes the bot’s messages and commands.')
+async def clean(ctx: commands.Context, *args):
+    msg: discord.Message = ctx.message
+    channel: discord.TextChannel = msg.channel
+    await channel.purge(limit=1000, check=lambda m: m.author.id == bot.user.id)
+    await ctx.send('Removed all messages sent by musicman!')
+
+
 @bot.command(name='removedupes', help='Removes duplicate songs from the queue.')
 async def removedupes(ctx: commands.Context, *args):
     global queue
