@@ -5,7 +5,7 @@ import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from pytimeparse.timeparse import timeparse
-from musicman.music_utils import get_audio
+from yt_dlp import YoutubeDL
 
 
 class QueueEntry:
@@ -26,6 +26,22 @@ class QueueEntry:
 
 load_dotenv()
 TOKEN = os.getenv('ACCESS_TOKEN')
+YDL_OPTIONS = {
+    'format': 'bestaudio', 'noplaylist':'True',
+    'username': os.getenv('YT_USERNAME'), 'password': os.getenv('YT_PASSWORD'),
+    'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
+}
+
+
+def get_audio(src: str, *args):
+    kw: str = ' '.join([src, *args])
+    try:
+        audio_dl = YoutubeDL(YDL_OPTIONS)
+        resp = audio_dl.extract_info(f'ytsearch:{kw}', download=False)['entries'][0]
+        return resp
+    except:
+        return None
+
 
 def ffmpeg_options(seek: int = None):
     if seek:
@@ -48,9 +64,11 @@ def play_next(error):
     if len(queue) > 0:
         now_playing = queue.pop(0)
         voiceclient.play(now_playing.audio, after=play_next)
+    else:
+        now_playing = None
 
 
-@bot.command(name='connect', help='Summons the bot to your voice channel.')
+@bot.command(name='connect', help='Summons the bot to your voice channel.', aliases=('join',))
 async def connect(ctx: commands.Context, *args):
     global voiceclient
     global queue
@@ -69,6 +87,7 @@ async def play(ctx: commands.Context, src: str, *args):
     global voiceclient
     global queue
     global now_playing
+    CRLF = '\n'
     if not voiceclient:
         await connect(ctx, *args)
     if voiceclient:
@@ -78,18 +97,18 @@ async def play(ctx: commands.Context, src: str, *args):
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
             if voiceclient.is_playing():
                 queue.append(QueueEntry(ctx.author, url, audio, resp['title']))
-                await ctx.send(f'Added "{resp["title"]}" to queue (Position {len(queue)}). Link: {resp["webpage_url"]}')
+                await ctx.send(f'Added "{resp["title"]}" to queue (Position {len(queue)}).{CRLF}Link: {resp["webpage_url"]}')
             else:
                 now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
                 voiceclient.play(audio, after=play_next)
-                await ctx.send(f'Now Playing "{resp["title"]}"! Link: {resp["webpage_url"]}')
+                await ctx.send(f'Now Playing "{resp["title"]}"!{CRLF}Link: {resp["webpage_url"]}')
         else:
             await ctx.send('No song found that matches keywords...')
     else:
         await ctx.send("musicman can't get in...")
 
 
-@bot.command(name='disconnect', help='Disconnect the bot from the voice channel it is in.')
+@bot.command(name='disconnect', help='Disconnect the bot from the voice channel it is in.', aliases=('leave',))
 async def disconnect(ctx: commands.Context, *args):
     global voiceclient
     global queue
@@ -103,10 +122,18 @@ async def disconnect(ctx: commands.Context, *args):
         voiceclient = None
 
 
+@bot.command(name='np', help='Shows what song the bot is currently playing.', aliases=('nowplaying',))
+async def np(ctx: commands.Context, *args):
+    global now_playing
+    if now_playing:
+        await ctx.send(f'Currently Playing: {now_playing.title}')
+    else:
+        await ctx.send('Nothing currently playing, queue up a track!')
+
+
 @bot.command(name='ping', help='Checks the bot’s response time to Discord.')
 async def ping(ctx: commands.Context, *args):
-    now = dt.utcnow()
-    await ctx.send(f'Ping took {(now - ctx.message.created_at).total_seconds() * 1000} ms')
+    await ctx.send(f'Ping took {int(bot.latency*1000)} ms')
 
 
 @bot.command(name='skip', help='Skips the currently playing song.')
@@ -159,11 +186,6 @@ async def remove(ctx: commands.Context, idx: int, *args):
 @bot.command(name='donate', help='Don\'t actually give me money please')
 async def donate(ctx: commands.Context, *args):
     await ctx.send('Donation rejected due to insufficient funds.')
-
-
-@bot.command(name='join', help='Summons the bot to your voice channel.')
-async def join(ctx: commands.Context, *args):
-    await connect(ctx, *args)
 
 
 @bot.command(name='pause', help='Pauses the currently playing track')
