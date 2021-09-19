@@ -1,6 +1,7 @@
 from enum import Enum
 from functools import partial
 import discord
+import requests
 from yt_dlp import YoutubeDL
 
 
@@ -46,6 +47,33 @@ class MusicState:
         self.queue = queue
         self.now_playing = now_playing
         self.ls = ls
+
+
+def handle_spotify(client: str, secret: str, url: str):
+
+    resp = requests.post(
+        'https://accounts.spotify.com/api/token', auth=(client, secret),
+        data={'grant_type': 'client_credentials'}
+    )
+    if resp.status_code != 200:
+        return None
+
+    token = resp.json()['access_token']
+
+    track_id = url.split('/')[-1].split('?')[0]
+
+    resp = requests.get(
+        f'https://api.spotify.com/v1/tracks/{track_id}',
+        headers={'Authorization': f'Bearer {token}'}
+    )
+
+    if resp.status_code != 200:
+        return None
+
+    track = resp.json()
+    artists = track['artists']
+
+    return f'{track["name"]} {artists[0]["name"] if len(artists) > 0 else ""}'
 
 
 def get_audio(options: dict[str, str], src: str, *args):

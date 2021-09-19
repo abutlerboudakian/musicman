@@ -6,17 +6,20 @@ from dotenv import load_dotenv
 from pytimeparse.timeparse import timeparse
 from musicman.util import (
     LoopState, QueueEntry, MusicState,
-    get_audio, apply_context, ffmpeg_options
+    get_audio, apply_context, ffmpeg_options,
+    handle_spotify
 )
 
 
 load_dotenv()
 
 # Constants
-TOKEN = os.getenv('ACCESS_TOKEN')
+SP_CLIENT = os.getenv('SP_CLIENT')
+SP_SECRET = os.getenv('SP_SECRET')
+BOT_TOKEN = os.getenv('BOT_TOKEN')
 YDL_OPTIONS = {
     'format': 'bestaudio', 'noplaylist': 'True',
-    'username': os.getenv('YT_USERNAME'), 'password': os.getenv('YT_PASSWORD'),
+    'username': os.getenv('YT_USER'), 'password': os.getenv('YT_PASS'),
     'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
 }
 
@@ -402,6 +405,17 @@ async def leavecleanup(ctx: commands.Context, *args):
         await ctx.send('Removed all songs submitted by absent users')
 
 
+@bot.command(name='spotify', help='Plays a song from the given Spotify URL')
+async def spotify(ctx: commands.Context, url: str):
+    global SP_CLIENT
+    global SP_SECRET
+    kw = handle_spotify(SP_CLIENT, SP_SECRET, url)
+    if kw:
+        await play(ctx, kw)
+    else:
+        await ctx.send('Invalid Spotify link')
+
+
 # Easter egg commands
 @bot.command(name='africa', hidden=True)
 async def africa(ctx: commands.Context, *args):
@@ -420,4 +434,4 @@ async def ross(ctx: commands.Context, *args):
     await play(ctx, '"BUSHES OF LOVE" -- Extended Lyric Video')
     await ctx.send('For daddy Ross <3')
 
-bot.run(TOKEN)
+bot.run(BOT_TOKEN)
