@@ -1,4 +1,5 @@
 from enum import Enum
+from functools import partial
 import os
 import random
 import discord
@@ -29,6 +30,27 @@ class QueueEntry:
         self.url = url
         self.audio = audio
         self.title = title
+
+
+class MusicState:
+
+    guild_id: int
+    voiceclient: discord.VoiceClient
+    queue: list[QueueEntry]
+    now_playing: QueueEntry
+    ls: LoopState
+
+    def __init__(
+        self, guild_id: int, voiceclient: discord.VoiceClient = None,
+        queue: list[QueueEntry] = [], now_playing: QueueEntry = None,
+        ls: LoopState = LoopState.OFF
+    ):
+
+        self.guild_id = guild_id
+        self.voiceclient = voiceclient
+        self.queue = queue
+        self.now_playing = now_playing
+        self.ls = ls
 
 
 load_dotenv()
@@ -70,77 +92,82 @@ def ffmpeg_options(seek: int = None):
     }
 
 
+def apply_context(func, ctx: commands.Context):
+    return partial(func, ctx)
+
+
 # Globals
 bot = commands.Bot(
     command_prefix='!',
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
-voiceclient: discord.VoiceClient = None
+voiceclients: discord.VoiceClient = None
 queue: list[QueueEntry] = []
 now_playing: QueueEntry = None
-ls = LoopState.OFF
+ls: LoopState = LoopState.OFF
+guild_map: dict[int, MusicState] = {}
 
 
-def play_next(error):
-    global voiceclient
-    global now_playing
-    global queue
-    global ls
+def get_ms(guild_id: int):
+    global guild_map
+    if guild_id not in guild_map:
+        guild_map[guild_id] = MusicState(guild_id)
+    return guild_map[guild_id]
+
+
+def play_next(ctx: commands.Context, error):
+    ms: MusicState = get_ms(ctx.guild.id)
 
     print(error)
 
-    if ls != LoopState.NOW_PLAYING:
-        if len(queue) > 0:
-            if ls == LoopState.QUEUE:
-                queue.append(now_playing)
-            now_playing = queue.pop(0)
-            voiceclient.play(now_playing.audio, after=play_next)
+    if ms.ls != LoopState.NOW_PLAYING:
+        if len(ms.queue) > 0:
+            if ms.ls == LoopState.QUEUE:
+                ms.queue.append(now_playing)
+            ms.now_playing = ms.queue.pop(0)
+            ms.voiceclient.play(
+                ms.now_playing.audio, after=apply_context(play_next, ctx)
+            )
         else:
-            now_playing = None
+            ms.now_playing = None
     else:
-        audio = discord.FFmpegOpusAudio(now_playing.url, **ffmpeg_options())
-        now_playing.audio = audio
-        voiceclient.play(now_playing.audio, after=play_next)
+        audio = discord.FFmpegOpusAudio(ms.now_playing.url, **ffmpeg_options())
+        ms.now_playing.audio = audio
+        ms.voiceclient.play(
+            ms.now_playing.audio, after=apply_context(play_next, ctx)
+        )
 
 
-# Main Commands
-@bot.command(
-    name='connect', help='Summons the bot to your voice channel.',
-    aliases=('join',)
-)
-async def connect(ctx: commands.Context, *args):
-    global voiceclient
-    global queue
-    channel: discord.VoiceChannel = ctx.author.voice.channel
-    if channel:
-        voiceclient = await channel.connect()
-        await ctx.send(f'musicman connected to {channel.name}')
-    else:
-        await ctx.send(f'{ctx.author.name} is not in a voice channel')
+async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
-
-@bot.command(name='play', help='Plays a song with the given name or URL.')
-async def play(ctx: commands.Context, src: str, *args):
-    global voiceclient
-    global queue
-    global now_playing
+    ms: MusicState = get_ms(ctx.guild.id)
     CRLF = '\n'
-    if not voiceclient:
+    if not ms.voiceclient:
         await connect(ctx, *args)
-    if voiceclient:
+    if ms.voiceclient:
         resp: dict = get_audio(src, *args)
         if resp:
             url = resp['formats'][0]['url']
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
-            if voiceclient.is_playing() or voiceclient.is_paused():
-                queue.append(QueueEntry(ctx.author, url, audio, resp['title']))
+            if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
+                if top:
+                    ms.queue.insert(
+                        0, QueueEntry(ctx.author, url, audio, resp['title'])
+                    )
+                else:
+                    ms.queue.append(
+                        QueueEntry(ctx.author, url, audio, resp['title'])
+                    )
                 await ctx.send(
                     f'Added "{resp["title"]}" to queue (Position '
-                    f'{len(queue)}).{CRLF}Link: {resp["webpage_url"]}'
+                    f'{"1" if top else len(ms.queue)}).{CRLF}'
+                    f'Link: {resp["webpage_url"]}'
                 )
             else:
-                now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
-                voiceclient.play(audio, after=play_next)
+                ms.now_playing = QueueEntry(
+                    ctx.author, url, audio, resp['title']
+                )
+                ms.voiceclient.play(audio, after=apply_context(play_next, ctx))
                 await ctx.send(
                     f'Now Playing "{resp["title"]}"!{CRLF}'
                     f'Link: {resp["webpage_url"]}'
@@ -151,30 +178,48 @@ async def play(ctx: commands.Context, src: str, *args):
         await ctx.send("musicman can't get in...")
 
 
+# Main Commands
+@bot.command(
+    name='connect', help='Summons the bot to your voice channel.',
+    aliases=('join',)
+)
+async def connect(ctx: commands.Context, *args):
+    ms: MusicState = get_ms(ctx.guild.id)
+    channel: discord.VoiceChannel = ctx.author.voice.channel
+    if channel:
+        ms.voiceclient = await channel.connect()
+        await ctx.send(f'musicman connected to {channel.name}')
+    else:
+        await ctx.send(f'{ctx.author.name} is not in a voice channel')
+
+
+@bot.command(name='play', help='Plays a song with the given name or URL.')
+async def play(ctx: commands.Context, src: str, *args):
+    await play_either(ctx, False, src, *args)
+
+
 @bot.command(
     name='disconnect',
     help='Disconnect the bot from the voice channel it is in.',
     aliases=('leave',)
 )
 async def disconnect(ctx: commands.Context, *args):
-    global voiceclient
-    global queue
-    global now_playing
-    global ls
+    ms: MusicState = get_ms(ctx.guild.id)
 
     for vc in bot.voice_clients:
-        await vc.disconnect()
-        vc.cleanup()
+        if vc.guild.id == ctx.guild.id:
+            await vc.disconnect()
+            vc.cleanup()
 
-    queue.clear()
-    if voiceclient:
-        if voiceclient.is_playing() or voiceclient.is_paused():
-            ls = LoopState.OFF
-            voiceclient.stop()
-        await ctx.send(f'Disconnected from {voiceclient.channel.name}')
-        await voiceclient.disconnect()
-        voiceclient.cleanup()
-        voiceclient = None
+    ms.queue.clear()
+    if ms.voiceclient:
+        if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
+            ms.ls = LoopState.OFF
+            ms.voiceclient.stop()
+        await ctx.send(f'Disconnected from {ms.voiceclient.channel.name}')
+        await ms.voiceclient.disconnect()
+        ms.voiceclient.cleanup()
+        ms.voiceclient = None
 
 
 @bot.command(
@@ -183,9 +228,9 @@ async def disconnect(ctx: commands.Context, *args):
     aliases=('nowplaying',)
 )
 async def np(ctx: commands.Context, *args):
-    global now_playing
-    if now_playing:
-        await ctx.send(f'Currently Playing: {now_playing.title}')
+    ms: MusicState = get_ms(ctx.guild.id)
+    if ms.now_playing:
+        await ctx.send(f'Currently Playing: {ms.now_playing.title}')
     else:
         await ctx.send('Nothing currently playing, queue up a track!')
 
@@ -197,10 +242,9 @@ async def ping(ctx: commands.Context, *args):
 
 @bot.command(name='skip', help='Skips the currently playing song.')
 async def skip(ctx: commands.Context, *args):
-    global voiceclient
-    global queue
-    if voiceclient:
-        voiceclient.stop()
+    ms: MusicState = get_ms(ctx.guild.id)
+    if ms.voiceclient:
+        ms.voiceclient.stop()
         await ctx.send('Skipped')
     else:
         await ctx.send('Nothing playing to skip')
@@ -210,21 +254,20 @@ async def skip(ctx: commands.Context, *args):
     name='seek', help='Seeks to a certain point in the current track.'
 )
 async def seek(ctx: commands.Context, timestamp: str, *args):
-    global voiceclient
-    global now_playing
-    if voiceclient.is_playing() or voiceclient.is_paused():
+    ms: MusicState = get_ms(ctx.guild.id)
+    if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
         try:
             td_ts = int(timeparse(timestamp))
             audio = discord.FFmpegPCMAudio(
-                now_playing.url, **ffmpeg_options(td_ts)
+                ms.now_playing.url, **ffmpeg_options(td_ts)
             )
-            queue.insert(
+            ms.queue.insert(
                 0, QueueEntry(
-                    now_playing.author, now_playing.url, audio,
-                    now_playing.title
+                    ms.now_playing.author, ms.now_playing.url, audio,
+                    ms.now_playing.title
                 )
             )
-            voiceclient.stop()
+            ms.voiceclient.stop()
             await ctx.send(f'Seeked to {timestamp}')
         except Exception:
             await ctx.send(f'Invalid timestamp "{timestamp}"')
@@ -234,12 +277,12 @@ async def seek(ctx: commands.Context, timestamp: str, *args):
 
 @bot.command(name='remove', help='Removes a certain entry from the queue.')
 async def remove(ctx: commands.Context, idx: int, *args):
-    global queue
-    if len(queue) > 0:
+    ms: MusicState = get_ms(ctx.guild.id)
+    if len(ms.queue) > 0:
         if idx:
             try:
-                removed = queue[idx-1]
-                queue.remove(queue[idx-1])
+                removed = ms.queue[idx-1]
+                ms.queue.remove(queue[idx-1])
                 await ctx.send(f'Removed "{removed.title}" at position {idx}')
             except Exception:
                 await ctx.send(f'Invalid index {idx}')
@@ -251,28 +294,27 @@ async def remove(ctx: commands.Context, idx: int, *args):
 
 @bot.command(name='loopqueue', help='Loops the whole queue.')
 async def loopqueue(ctx: commands.Context, *args):
-    global ls
-    ls = LoopState.QUEUE
+    ms: MusicState = get_ms(ctx.guild.id)
+    ms.ls = LoopState.QUEUE
     await ctx.send('Queue loop enabled')
 
 
 @bot.command(name='loop', help='Loop the currently playing song.')
 async def loop(ctx: commands.Context, *args):
-    global now_playing
-    global ls
+    ms: MusicState = get_ms(ctx.guild.id)
 
-    if now_playing:
-        ls = LoopState.NOW_PLAYING
-        await ctx.send(f'"{now_playing.title}" loop enabled')
+    if ms.now_playing:
+        ms.ls = LoopState.NOW_PLAYING
+        await ctx.send(f'"{ms.now_playing.title}" loop enabled')
     else:
         await ctx.send('Nothing playing to loop')
 
 
 @bot.command(name='noloop', help='Stop looping')
 async def noloop(ctx: commands.Context, *args):
-    global ls
+    ms: MusicState = get_ms(ctx.guild.id)
 
-    ls = LoopState.OFF
+    ms.ls = LoopState.OFF
     await ctx.send('Looping disabled')
 
 
@@ -283,22 +325,20 @@ async def donate(ctx: commands.Context, *args):
 
 @bot.command(name='pause', help='Pauses the currently playing track')
 async def pause(ctx: commands.Context, *args):
-    global voiceclient
-    global now_playing
-    if voiceclient and voiceclient.is_playing():
-        voiceclient.pause()
-        await ctx.send(f'Paused "{now_playing.title}"')
+    ms: MusicState = get_ms(ctx.guild.id)
+    if ms.voiceclient and ms.voiceclient.is_playing():
+        ms.voiceclient.pause()
+        await ctx.send(f'Paused "{ms.now_playing.title}"')
     else:
         await ctx.send('Nothing to pause, queue up another song!')
 
 
 @bot.command(name='resume', help='Resume paused music')
 async def resume(ctx: commands.Context, *args):
-    global voiceclient
-    global now_playing
-    if voiceclient and voiceclient.is_paused():
-        voiceclient.resume()
-        await ctx.send(f'Resumed "{now_playing.title}"')
+    ms: MusicState = get_ms(ctx.guild.id)
+    if ms.voiceclient and ms.voiceclient.is_paused():
+        ms.voiceclient.resume()
+        await ctx.send(f'Resumed "{ms.now_playing.title}"')
     else:
         await ctx.send('Nothing to resume, queue up another song!')
 
@@ -311,15 +351,15 @@ async def resume(ctx: commands.Context, *args):
     )
 )
 async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
-    global queue
-    if len(queue) > 0:
+    ms: MusicState = get_ms(ctx.guild.id)
+    if len(ms.queue) > 0:
         if not end_idx:
             end_idx = 1
         if start_idx:
             try:
-                qe = queue[start_idx-1]
-                queue.remove(qe)
-                queue.insert(end_idx-1, qe)
+                qe = ms.queue[start_idx-1]
+                ms.queue.remove(qe)
+                ms.queue.insert(end_idx-1, qe)
                 await ctx.send(
                     f'"{qe.title}" moved from {start_idx} to {end_idx}'
                 )
@@ -334,21 +374,22 @@ async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
 
 @bot.command(name='skipto', help='Skips to a certain position in the queue.')
 async def skipto(ctx: commands.Context, idx: int, *args):
-    global queue
-    global now_playing
+    ms: MusicState = get_ms(ctx.guild.id)
     try:
-        qe = queue[idx-1]
-        while now_playing != qe:
+        qe = ms.queue[idx-1]
+        while ms.now_playing != qe:
             await skip(ctx)
-        await ctx.send(f'Skipped to "{now_playing.title}" at position {idx}')
+        await ctx.send(
+            f'Skipped to "{ms.now_playing.title}" at position {idx}'
+        )
     except Exception:
         await ctx.send(f'Invalid index {idx}')
 
 
 @bot.command(name='clear', help='Clears the queue.')
 async def clear(ctx: commands.Context, *args):
-    global queue
-    queue.clear()
+    ms: MusicState = get_ms(ctx.guild.id)
+    ms.queue.clear()
     await ctx.send('Cleared queue')
 
 
@@ -369,14 +410,14 @@ async def clean(ctx: commands.Context, *args):
     name='removedupes', help='Removes duplicate songs from the queue.'
 )
 async def removedupes(ctx: commands.Context, *args):
-    global queue
+    ms: MusicState = get_ms(ctx.guild.id)
     urls = set()
     n_queue = []
-    for q in queue:
+    for q in ms.queue:
         if q.url not in urls:
             urls.add(q.url)
             n_queue.append(q)
-    queue = n_queue
+    ms.queue = n_queue
     await ctx.send('Duplicates removed')
 
 
@@ -384,36 +425,7 @@ async def removedupes(ctx: commands.Context, *args):
     name='playtop', help='Like the play command, but queues from the top.'
 )
 async def playtop(ctx: commands.Context, src: str, *args):
-    global voiceclient
-    global queue
-    global now_playing
-    CRLF = '\n'
-    if not voiceclient:
-        await connect(ctx, *args)
-    if voiceclient:
-        resp: dict = get_audio(src, *args)
-        if resp:
-            url = resp['formats'][0]['url']
-            audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
-            if voiceclient.is_playing() or voiceclient.is_paused():
-                queue.insert(
-                    0, QueueEntry(ctx.author, url, audio, resp['title'])
-                )
-                await ctx.send(
-                    f'Added "{resp["title"]}" to queue (Position 1).{CRLF}'
-                    f'Link: {resp["webpage_url"]}'
-                )
-            else:
-                now_playing = QueueEntry(ctx.author, url, audio, resp['title'])
-                voiceclient.play(audio, after=play_next)
-                await ctx.send(
-                    f'Now Playing "{resp["title"]}"!{CRLF}'
-                    f'Link: {resp["webpage_url"]}'
-                )
-        else:
-            await ctx.send('No song found that matches keywords...')
-    else:
-        await ctx.send("musicman can't get in...")
+    await play_either(ctx, True, src, *args)
 
 
 @bot.command(
@@ -421,28 +433,28 @@ async def playtop(ctx: commands.Context, src: str, *args):
     help='Adds a song to the top of the queue then skips to it.'
 )
 async def playskip(ctx: commands.Context, src: str, *args):
-    global queue
+    ms: MusicState = get_ms(ctx.guild.id)
     await playtop(ctx, src, *args)
-    if len(queue) > 0:
+    if len(ms.queue) > 0:
         await skip(ctx, *args)
 
 
 @bot.command(name='shuffle', help='Shuffles the queue.')
 async def shuffle(ctx: commands.Context, *args):
-    global queue
-    random.shuffle(queue)
+    ms: MusicState = get_ms(ctx.guild.id)
+    random.shuffle(ms.queue)
     await ctx.send('Queue shuffled')
 
 
 @bot.command(name='queue', help='View the queue.')
 async def view_queue(ctx: commands.Context, *args):
-    global queue
-    if len(queue) > 0:
+    ms: MusicState = get_ms(ctx.guild.id)
+    if len(ms.queue) > 0:
         embed = discord.Embed()
         embed.title = 'Queue'
-        for i in range(len(queue)):
+        for i in range(len(ms.queue)):
             embed.add_field(
-                name=f'Position {i+1}', value=queue[i].title, inline=False
+                name=f'Position {i+1}', value=ms.queue[i].title, inline=False
             )
         await ctx.send(embed=embed)
     else:
@@ -453,17 +465,15 @@ async def view_queue(ctx: commands.Context, *args):
     name='leavecleanup', help='Removes absent user’s songs from the Queue.'
 )
 async def leavecleanup(ctx: commands.Context, *args):
-    global voiceclient
-    global queue
-    global now_playing
+    ms: MusicState = get_ms(ctx.guild.id)
 
-    if voiceclient:
-        channel: discord.VoiceChannel = voiceclient.channel
+    if ms.voiceclient:
+        channel: discord.VoiceChannel = ms.voiceclient.channel
         members: list[int] = [m.id for m in channel.members]
 
-        queue = [q for q in queue if q.author.id in members]
+        ms.queue = [q for q in ms.queue if q.author.id in members]
 
-        if now_playing.author.id not in members:
+        if ms.now_playing.author.id not in members:
             await skip(ctx, *args)
 
         await ctx.send('Removed all songs submitted by absent users')
