@@ -1,56 +1,13 @@
-from enum import Enum
-from functools import partial
 import os
 import random
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 from pytimeparse.timeparse import timeparse
-from yt_dlp import YoutubeDL
-
-
-class LoopState(Enum):
-    OFF = 0
-    NOW_PLAYING = 1
-    QUEUE = 2
-
-
-class QueueEntry:
-
-    author: discord.User
-    url: str
-    audio: discord.FFmpegPCMAudio
-    title: str
-
-    def __init__(
-        self, author: discord.User, url: str,
-        audio: discord.FFmpegPCMAudio, title: str
-    ):
-        self.author = author
-        self.url = url
-        self.audio = audio
-        self.title = title
-
-
-class MusicState:
-
-    guild_id: int
-    voiceclient: discord.VoiceClient
-    queue: list[QueueEntry]
-    now_playing: QueueEntry
-    ls: LoopState
-
-    def __init__(
-        self, guild_id: int, voiceclient: discord.VoiceClient = None,
-        queue: list[QueueEntry] = [], now_playing: QueueEntry = None,
-        ls: LoopState = LoopState.OFF
-    ):
-
-        self.guild_id = guild_id
-        self.voiceclient = voiceclient
-        self.queue = queue
-        self.now_playing = now_playing
-        self.ls = ls
+from musicman.util import (
+    LoopState, QueueEntry, MusicState,
+    get_audio, apply_context, ffmpeg_options
+)
 
 
 load_dotenv()
@@ -64,47 +21,11 @@ YDL_OPTIONS = {
 }
 
 
-# Utility Functions
-def get_audio(src: str, *args):
-    kw: str = ' '.join([src, *args])
-    try:
-        audio_dl = YoutubeDL(YDL_OPTIONS)
-        resp = audio_dl.extract_info(
-            f'ytsearch:{kw}', download=False
-        )['entries'][0]
-        return resp
-    except Exception:
-        return None
-
-
-def ffmpeg_options(seek: int = None):
-    if seek:
-        return {
-            'before_options': (
-                '-reconnect 1 -reconnect_streamed 1 '
-                f'-reconnect_delay_max 5 -ss {seek}'
-            ), 'options': '-vn'
-        }
-    return {
-        'before_options': (
-            '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5'
-        ), 'options': '-vn'
-    }
-
-
-def apply_context(func, ctx: commands.Context):
-    return partial(func, ctx)
-
-
 # Globals
 bot = commands.Bot(
     command_prefix='!',
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
-voiceclients: discord.VoiceClient = None
-queue: list[QueueEntry] = []
-now_playing: QueueEntry = None
-ls: LoopState = LoopState.OFF
 guild_map: dict[int, MusicState] = {}
 
 
@@ -123,7 +44,7 @@ def play_next(ctx: commands.Context, error):
     if ms.ls != LoopState.NOW_PLAYING:
         if len(ms.queue) > 0:
             if ms.ls == LoopState.QUEUE:
-                ms.queue.append(now_playing)
+                ms.queue.append(ms.now_playing)
             ms.now_playing = ms.queue.pop(0)
             ms.voiceclient.play(
                 ms.now_playing.audio, after=apply_context(play_next, ctx)
@@ -140,12 +61,14 @@ def play_next(ctx: commands.Context, error):
 
 async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
+    global YDL_OPTIONS
+
     ms: MusicState = get_ms(ctx.guild.id)
     CRLF = '\n'
     if not ms.voiceclient:
         await connect(ctx, *args)
     if ms.voiceclient:
-        resp: dict = get_audio(src, *args)
+        resp: dict = get_audio(YDL_OPTIONS, src, *args)
         if resp:
             url = resp['formats'][0]['url']
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
@@ -282,7 +205,7 @@ async def remove(ctx: commands.Context, idx: int, *args):
         if idx:
             try:
                 removed = ms.queue[idx-1]
-                ms.queue.remove(queue[idx-1])
+                ms.queue.remove(ms.queue[idx-1])
                 await ctx.send(f'Removed "{removed.title}" at position {idx}')
             except Exception:
                 await ctx.send(f'Invalid index {idx}')
