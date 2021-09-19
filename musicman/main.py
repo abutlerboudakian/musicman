@@ -65,12 +65,16 @@ def play_next(ctx: commands.Context, error):
 async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
     global YDL_OPTIONS
+    global SP_CLIENT
+    global SP_SECRET
 
     ms: MusicState = get_ms(ctx.guild.id)
     CRLF = '\n'
     if not ms.voiceclient:
         await connect(ctx, *args)
     if ms.voiceclient:
+        if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
+            src = handle_spotify(SP_CLIENT, SP_SECRET, src)
         resp: dict = get_audio(YDL_OPTIONS, src, *args)
         if resp:
             url = resp['formats'][0]['url']
@@ -403,17 +407,6 @@ async def leavecleanup(ctx: commands.Context, *args):
             await skip(ctx, *args)
 
         await ctx.send('Removed all songs submitted by absent users')
-
-
-@bot.command(name='spotify', help='Plays a song from the given Spotify URL')
-async def spotify(ctx: commands.Context, url: str):
-    global SP_CLIENT
-    global SP_SECRET
-    kw = handle_spotify(SP_CLIENT, SP_SECRET, url)
-    if kw:
-        await play(ctx, kw)
-    else:
-        await ctx.send('Invalid Spotify link')
 
 
 # Easter egg commands
