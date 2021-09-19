@@ -1,5 +1,6 @@
 from enum import Enum
 from functools import partial
+from traceback import print_exc
 import discord
 import requests
 from yt_dlp import YoutubeDL
@@ -81,10 +82,15 @@ def get_audio(options: dict[str, str], src: str, *args):
     try:
         audio_dl = YoutubeDL(options)
         resp = audio_dl.extract_info(
-            f'ytsearch:{kw}', download=False
-        )['entries'][0]
-        return resp
+            (
+                f'ytsearch:{kw}'
+                if 'www.youtube.com' not in [s.lower() for s in kw.split('/')]
+                else kw
+            ), download=False
+        )
+        return resp['entries'][0] if 'entries' in resp else resp
     except Exception:
+        print_exc()
         return None
 
 
