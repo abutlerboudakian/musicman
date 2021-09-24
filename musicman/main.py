@@ -14,26 +14,15 @@ from musicman.util import (
 load_dotenv()
 
 # Constants
-SP_CLIENT = os.getenv('SP_CLIENT')
-SP_SECRET = os.getenv('SP_SECRET')
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-YDL_OPTIONS = {
-    'format': 'bestaudio', 'noplaylist': 'True',
-    'username': os.getenv('YT_USER'), 'password': os.getenv('YT_PASS'),
-    'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
-}
-
-
-# Globals
 bot = commands.Bot(
     command_prefix='!',
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
-guild_map: dict[int, MusicState] = {}
 
 
 def get_ms(guild_id: int):
-    global guild_map
+    guild_map: dict[int, MusicState] = {}
     if guild_id not in guild_map:
         guild_map[guild_id] = MusicState(guild_id)
     return guild_map[guild_id]
@@ -64,9 +53,13 @@ def play_next(ctx: commands.Context, error):
 
 async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
-    global YDL_OPTIONS
-    global SP_CLIENT
-    global SP_SECRET
+    YDL_OPTIONS = {
+        'format': 'bestaudio', 'noplaylist': 'True',
+        'username': os.getenv('YT_USER'), 'password': os.getenv('YT_PASS'),
+        'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
+    }
+    SP_CLIENT = os.getenv('SP_CLIENT')
+    SP_SECRET = os.getenv('SP_SECRET')
 
     ms: MusicState = get_ms(ctx.guild.id)
     CRLF = '\n'
@@ -123,7 +116,10 @@ async def connect(ctx: commands.Context, *args):
         await ctx.send(f'{ctx.author.name} is not in a voice channel')
 
 
-@bot.command(name='play', help='Plays a song with the given name or URL.')
+@bot.command(
+    name='play', help='Plays a song with the given name or URL.',
+    aliases=('p',)
+)
 async def play(ctx: commands.Context, src: str, *args):
     await play_either(ctx, False, src, *args)
 
