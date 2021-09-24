@@ -39,13 +39,13 @@ class MusicState:
 
     def __init__(
         self, guild_id: int, voiceclient: discord.VoiceClient = None,
-        queue: list[QueueEntry] = [], now_playing: QueueEntry = None,
+        queue: list[QueueEntry] = None, now_playing: QueueEntry = None,
         ls: LoopState = LoopState.OFF
     ):
 
         self.guild_id = guild_id
         self.voiceclient = voiceclient
-        self.queue = queue
+        self.queue = queue or []
         self.now_playing = now_playing
         self.ls = ls
 
