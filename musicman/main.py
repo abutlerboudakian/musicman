@@ -11,21 +11,25 @@ from musicman.util import (
 )
 
 
+class MusicManBot(commands.Bot):
+
+    guild_map: dict[int, MusicState] = {}
+
+
 load_dotenv()
 
 # Constants
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-bot = commands.Bot(
+bot = MusicManBot(
     command_prefix='!',
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
 
 
 def get_ms(guild_id: int):
-    guild_map: dict[int, MusicState] = {}
-    if guild_id not in guild_map:
-        guild_map[guild_id] = MusicState(guild_id)
-    return guild_map[guild_id]
+    if guild_id not in bot.guild_map:
+        bot.guild_map[guild_id] = MusicState(guild_id)
+    return bot.guild_map[guild_id]
 
 
 def play_next(ctx: commands.Context, error):
@@ -55,7 +59,6 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
     YDL_OPTIONS = {
         'format': 'bestaudio', 'noplaylist': 'True',
-        'username': os.getenv('YT_USER'), 'password': os.getenv('YT_PASS'),
         'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
     }
     SP_CLIENT = os.getenv('SP_CLIENT')
