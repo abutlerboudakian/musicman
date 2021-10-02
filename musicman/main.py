@@ -6,13 +6,13 @@ from dotenv import load_dotenv
 from pytimeparse.timeparse import timeparse
 from musicman.util import (
     LoopState, QueueEntry, MusicState,
-    get_audio, apply_context, ffmpeg_options,
+    get_audio, generate_playlist,
+    apply_context, ffmpeg_options,
     handle_spotify
 )
 
 
 class MusicManBot(commands.Bot):
-
     guild_map: dict[int, MusicState] = {}
 
 
@@ -120,6 +120,51 @@ async def connect(ctx: commands.Context, *args):
 )
 async def play(ctx: commands.Context, src: str, *args):
     await play_either(ctx, False, src, *args)
+
+
+@bot.command(
+    name='playlist',
+    help='Loads a playlist into the queue with a given name or URL.',
+    aliases=('pl',)
+)
+async def playlist(ctx: commands.Context, src: str, *args):
+
+    YDL_OPTIONS = {
+        'format': 'bestaudio', 'yesplaylist': True,
+        'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
+    }
+
+    ms: MusicState = get_ms(ctx.guild.id)
+    CRLF = '\n'
+    if not ms.voiceclient:
+        await connect(ctx, *args)
+    if ms.voiceclient:
+
+        for resp in generate_playlist(YDL_OPTIONS, src, *args):
+            if resp:
+                url = resp['formats'][0]['url']
+                audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
+                qe = QueueEntry(ctx.author, url, audio, resp['title'])
+                if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
+                    ms.queue.append(qe)
+                    await ctx.send(
+                        f'Added "{resp["title"]}" to queue (Position '
+                        f'{len(ms.queue)}).{CRLF}'
+                        f'Link: {resp["webpage_url"]}'
+                    )
+                else:
+                    ms.now_playing = qe
+                    ms.voiceclient.play(
+                        audio, after=apply_context(play_next, ctx)
+                    )
+                    await ctx.send(
+                        f'Now Playing "{resp["title"]}"!{CRLF}'
+                        f'Link: {resp["webpage_url"]}'
+                    )
+            else:
+                await ctx.send('No song found that matches keywords...')
+    else:
+        await ctx.send("musicman can't get in...")
 
 
 @bot.command(
@@ -232,6 +277,17 @@ async def loop(ctx: commands.Context, *args):
         await ctx.send(f'"{ms.now_playing.title}" loop enabled')
     else:
         await ctx.send('Nothing playing to loop')
+
+
+@bot.command(
+    name='playloop', help='Playtops the given song and enables loop',
+    aliases=('ploop',)
+)
+async def playloop(ctx: commands.Context, src: str, *args):
+    ms: MusicState = get_ms(ctx.guild.id)
+    ms.ls = LoopState.OFF
+    await playtop(ctx, src, *args)
+    await loop(ctx, *args)
 
 
 @bot.command(name='noloop', help='Stop looping')

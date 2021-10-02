@@ -77,6 +77,32 @@ def get_audio(options: dict[str, str], src: str, *args):
         return None
 
 
+def generate_playlist(options: dict[str, str], src: str, *args):
+    audio_dl = YoutubeDL(options)
+
+    for iek, i in audio_dl._ies.items():
+        if not i.suitable(src):
+            continue
+        tid = i.get_temp_id(src)
+        if tid is not None:
+            ie = audio_dl.get_info_extractor(iek)
+            break
+
+    print(f'ie: {ie}; url: {src}')
+
+    extract = ie.extract(src)
+    ie_result = ie.extract(extract['url'])
+
+    print(ie_result)
+
+    entries = list(ie_result['entries'])
+
+    for e in entries:
+        yield audio_dl.extract_info(
+            e['url'], ie_key=e['ie_key'], download=False
+        )
+
+
 def ffmpeg_options(seek: int = None):
     if seek:
         return {
