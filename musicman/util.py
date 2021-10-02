@@ -1,6 +1,8 @@
+from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
 from traceback import print_exc
+from typing import Optional
 import discord
 import requests
 from yt_dlp import YoutubeDL
@@ -12,6 +14,7 @@ class LoopState(Enum):
     QUEUE = 2
 
 
+@dataclass
 class QueueEntry:
 
     author: discord.User
@@ -19,35 +22,15 @@ class QueueEntry:
     audio: discord.FFmpegPCMAudio
     title: str
 
-    def __init__(
-        self, author: discord.User, url: str,
-        audio: discord.FFmpegPCMAudio, title: str
-    ):
-        self.author = author
-        self.url = url
-        self.audio = audio
-        self.title = title
 
-
+@dataclass
 class MusicState:
 
     guild_id: int
-    voiceclient: discord.VoiceClient
-    queue: list[QueueEntry]
-    now_playing: QueueEntry
-    ls: LoopState
-
-    def __init__(
-        self, guild_id: int, voiceclient: discord.VoiceClient = None,
-        queue: list[QueueEntry] = None, now_playing: QueueEntry = None,
-        ls: LoopState = LoopState.OFF
-    ):
-
-        self.guild_id = guild_id
-        self.voiceclient = voiceclient
-        self.queue = queue or []
-        self.now_playing = now_playing
-        self.ls = ls
+    voiceclient: Optional[discord.VoiceClient] = None
+    queue: list[QueueEntry] = field(default_factory=list)
+    now_playing: Optional[QueueEntry] = None
+    ls: LoopState = LoopState.OFF
 
 
 def handle_spotify(client: str, secret: str, url: str):

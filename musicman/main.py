@@ -75,24 +75,19 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
         if resp:
             url = resp['formats'][0]['url']
             audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
+            qe = QueueEntry(ctx.author, url, audio, resp['title'])
             if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
                 if top:
-                    ms.queue.insert(
-                        0, QueueEntry(ctx.author, url, audio, resp['title'])
-                    )
+                    ms.queue.insert(0, qe)
                 else:
-                    ms.queue.append(
-                        QueueEntry(ctx.author, url, audio, resp['title'])
-                    )
+                    ms.queue.append(qe)
                 await ctx.send(
                     f'Added "{resp["title"]}" to queue (Position '
                     f'{"1" if top else len(ms.queue)}).{CRLF}'
                     f'Link: {resp["webpage_url"]}'
                 )
             else:
-                ms.now_playing = QueueEntry(
-                    ctx.author, url, audio, resp['title']
-                )
+                ms.now_playing = qe
                 ms.voiceclient.play(audio, after=apply_context(play_next, ctx))
                 await ctx.send(
                     f'Now Playing "{resp["title"]}"!{CRLF}'
