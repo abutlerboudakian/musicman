@@ -90,6 +90,9 @@ def handle_spotify(client: str, secret: str, url: str):
             (
                 f'{track["name"]} '
                 f'{track["artists"][0]["name"] if len(track["artists"]) > 0 else ""}'  # noqa: E501
+            ) if item_type.lower() == 'album' else (
+                f'{track["track"]["name"]} '
+                f'{track["track"]["artists"][0]["name"] if len(track["track"]["artists"]) > 0 else ""}'  # noqa: E501
             )
             for track in tracks
         ]
