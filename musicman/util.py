@@ -33,7 +33,7 @@ class MusicState:
     ls: LoopState = LoopState.OFF
 
 
-def handle_spotify(client: str, secret: str, url: str):
+def get_spotify_token(client: str, secret: str):
 
     resp = requests.post(
         'https://accounts.spotify.com/api/token', auth=(client, secret),
@@ -42,22 +42,57 @@ def handle_spotify(client: str, secret: str, url: str):
     if resp.status_code != 200:
         return None
 
-    token = resp.json()['access_token']
+    return resp.json()['access_token']
 
-    track_id = url.split('/')[-1].split('?')[0]
 
-    resp = requests.get(
-        f'https://api.spotify.com/v1/tracks/{track_id}',
-        headers={'Authorization': f'Bearer {token}'}
-    )
+def handle_spotify(client: str, secret: str, url: str):
 
-    if resp.status_code != 200:
-        return None
+    token = get_spotify_token(client, secret)
 
-    track = resp.json()
-    artists = track['artists']
+    item_type = url.split('/')[-2]
+    item_id = url.split('/')[-1].split('?')[0]
 
-    return f'{track["name"]} {artists[0]["name"] if len(artists) > 0 else ""}'
+    if item_type.lower() == 'track':
+
+        resp = requests.get(
+            f'https://api.spotify.com/v1/tracks/{item_id}',
+            headers={'Authorization': f'Bearer {token}'}
+        )
+
+        if resp.status_code != 200:
+            return None
+
+        track = resp.json()
+        artists = track['artists']
+
+        return (
+            f'{track["name"]} '
+            f'{artists[0]["name"] if len(artists) > 0 else ""}'
+        )
+
+    elif item_type.lower() in ('album', 'playlist'):
+
+        resp = requests.get(
+            (
+                f'https://api.spotify.com/v1/'
+                f'{item_type.lower()}s/{item_id}/tracks'
+            ),
+            headers={'Authorization': f'Bearer {token}'}
+        )
+
+        if resp.status_code != 200:
+            return None
+
+        item = resp.json()
+        tracks = item['items']
+
+        return [
+            (
+                f'{track["name"]} '
+                f'{track["artists"][0]["name"] if len(track["artists"]) > 0 else ""}'  # noqa: E501
+            )
+            for track in tracks
+        ]
 
 
 def get_audio(options: dict[str, str], src: str, *args):
@@ -77,30 +112,42 @@ def get_audio(options: dict[str, str], src: str, *args):
         return None
 
 
-def generate_playlist(options: dict[str, str], src: str, *args):
+def generate_playlist(
+    client: str, secret: str, options: dict[str, str], src: str, *args
+):
+
     audio_dl = YoutubeDL(options)
 
-    for iek, i in audio_dl._ies.items():
-        if not i.suitable(src):
-            continue
-        tid = i.get_temp_id(src)
-        if tid is not None:
-            ie = audio_dl.get_info_extractor(iek)
-            break
+    if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
+        tracks = handle_spotify(client, secret, src)
 
-    print(f'ie: {ie}; url: {src}')
+        for t in tracks:
 
-    extract = ie.extract(src)
-    ie_result = ie.extract(extract['url'])
+            yield audio_dl.extract_info(f'ytsearch:{t}', download=False)
 
-    print(ie_result)
+    else:
 
-    entries = list(ie_result['entries'])
+        for iek, i in audio_dl._ies.items():
+            if not i.suitable(src):
+                continue
+            tid = i.get_temp_id(src)
+            if tid is not None:
+                ie = audio_dl.get_info_extractor(iek)
+                break
 
-    for e in entries:
-        yield audio_dl.extract_info(
-            e['url'], ie_key=e['ie_key'], download=False
-        )
+        print(f'ie: {ie}; url: {src}')
+
+        extract = ie.extract(src)
+        ie_result = ie.extract(extract['url'])
+
+        print(ie_result)
+
+        entries = list(ie_result['entries'])
+
+        for e in entries:
+            yield audio_dl.extract_info(
+                e['url'], ie_key=e['ie_key'], download=False
+            )
 
 
 def ffmpeg_options(seek: int = None):

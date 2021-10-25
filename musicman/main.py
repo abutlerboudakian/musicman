@@ -135,7 +135,6 @@ async def playlist(ctx: commands.Context, src: str, *args):
     }
 
     ms: MusicState = get_ms(ctx.guild.id)
-    CRLF = '\n'
     if not ms.voiceclient:
         await connect(ctx, *args)
     if ms.voiceclient:
@@ -147,22 +146,14 @@ async def playlist(ctx: commands.Context, src: str, *args):
                 qe = QueueEntry(ctx.author, url, audio, resp['title'])
                 if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
                     ms.queue.append(qe)
-                    await ctx.send(
-                        f'Added "{resp["title"]}" to queue (Position '
-                        f'{len(ms.queue)}).{CRLF}'
-                        f'Link: {resp["webpage_url"]}'
-                    )
                 else:
                     ms.now_playing = qe
                     ms.voiceclient.play(
                         audio, after=apply_context(play_next, ctx)
                     )
-                    await ctx.send(
-                        f'Now Playing "{resp["title"]}"!{CRLF}'
-                        f'Link: {resp["webpage_url"]}'
-                    )
-            else:
-                await ctx.send('No song found that matches keywords...')
+
+        await ctx.send("Added '{src}' to queue")
+
     else:
         await ctx.send("musicman can't get in...")
 
