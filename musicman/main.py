@@ -133,13 +133,19 @@ async def playlist(ctx: commands.Context, src: str, *args):
         'format': 'bestaudio', 'yesplaylist': True,
         'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
     }
+    SP_CLIENT = os.getenv('SP_CLIENT')
+    SP_SECRET = os.getenv('SP_SECRET')
 
     ms: MusicState = get_ms(ctx.guild.id)
     if not ms.voiceclient:
         await connect(ctx, *args)
     if ms.voiceclient:
 
-        for resp in generate_playlist(YDL_OPTIONS, src, *args):
+        await ctx.send(f'Attempting to add {src}')
+
+        for resp in generate_playlist(
+            SP_CLIENT, SP_SECRET, YDL_OPTIONS, src, *args
+        ):
             if resp:
                 url = resp['formats'][0]['url']
                 audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
@@ -152,7 +158,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
                         audio, after=apply_context(play_next, ctx)
                     )
 
-        await ctx.send("Added '{src}' to queue")
+        await ctx.send(f"Added {src} to queue")
 
     else:
         await ctx.send("musicman can't get in...")
