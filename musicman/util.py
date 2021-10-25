@@ -123,7 +123,8 @@ def generate_playlist(
 
         for t in tracks:
 
-            yield audio_dl.extract_info(f'ytsearch:{t}', download=False)
+            resp = audio_dl.extract_info(f'ytsearch:{t}', download=False)
+            yield resp['entries'][0] if 'entries' in resp else resp
 
     else:
 
