@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 from enum import Enum
 from functools import partial
+from multiprocessing import Pool, cpu_count
 from traceback import print_exc
 from typing import Optional
 import discord
@@ -121,15 +122,16 @@ def generate_playlist(
 
     audio_dl = YoutubeDL(options)
 
+    tracks = None
+
     ret_tracks = []
 
     if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
-        tracks = handle_spotify(client, secret, src)
+        tracks = handle_spotify(client, secret, src)\
 
-        for t in tracks:
-
-            resp = audio_dl.extract_info(f'ytsearch:{t}', download=False)
-            ret_tracks.append(resp['entries'][0] if 'entries' in resp else resp)
+        pool = Pool(cpu_count())
+        ret_tracks.extend(pool.map(get_audio, tracks))
+        pool.close()
 
     else:
 
@@ -141,19 +143,14 @@ def generate_playlist(
                 ie = audio_dl.get_info_extractor(iek)
                 break
 
-        print(f'ie: {ie}; url: {src}')
-
         extract = ie.extract(src)
         ie_result = ie.extract(extract['url'])
 
-        print(ie_result)
+        tracks = [e['url'] for e in list(ie_result['entries'])]
 
-        entries = list(ie_result['entries'])
-
-        for e in entries:
-            ret_tracks.append(audio_dl.extract_info(
-                e['url'], ie_key=e['ie_key'], download=False
-            ))
+    pool = Pool(cpu_count())
+    ret_tracks.extend(pool.map(get_audio, tracks))
+    pool.close()
 
     return ret_tracks
 
