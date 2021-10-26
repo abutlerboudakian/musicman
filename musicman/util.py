@@ -121,13 +121,15 @@ def generate_playlist(
 
     audio_dl = YoutubeDL(options)
 
+    ret_tracks = []
+
     if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
         tracks = handle_spotify(client, secret, src)
 
         for t in tracks:
 
             resp = audio_dl.extract_info(f'ytsearch:{t}', download=False)
-            yield resp['entries'][0] if 'entries' in resp else resp
+            ret_tracks.append(resp['entries'][0] if 'entries' in resp else resp)
 
     else:
 
@@ -149,9 +151,11 @@ def generate_playlist(
         entries = list(ie_result['entries'])
 
         for e in entries:
-            yield audio_dl.extract_info(
+            ret_tracks.append(audio_dl.extract_info(
                 e['url'], ie_key=e['ie_key'], download=False
-            )
+            ))
+
+    return ret_tracks
 
 
 def ffmpeg_options(seek: int = None):

@@ -1,4 +1,6 @@
+import asyncio
 import os
+from concurrent.futures import ThreadPoolExecutor
 import random
 import discord
 from discord.ext import commands
@@ -143,9 +145,13 @@ async def playlist(ctx: commands.Context, src: str, *args):
 
         await ctx.send(f'Attempting to add {src}')
 
-        for resp in generate_playlist(
-            SP_CLIENT, SP_SECRET, YDL_OPTIONS, src, *args
-        ):
+        loop = asyncio.get_event_loop()
+        tracks = await loop.run_in_executor(
+            ThreadPoolExecutor(), generate_playlist, SP_CLIENT, SP_SECRET,
+            YDL_OPTIONS, src, *args
+        )
+
+        for resp in tracks:
             if resp:
                 url = resp['formats'][0]['url']
                 audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
