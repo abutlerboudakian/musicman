@@ -127,11 +127,7 @@ def generate_playlist(
     ret_tracks = []
 
     if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
-        tracks = handle_spotify(client, secret, src)\
-
-        pool = Pool(cpu_count())
-        ret_tracks.extend(pool.map(get_audio, tracks))
-        pool.close()
+        tracks = handle_spotify(client, secret, src)
 
     else:
 
@@ -149,7 +145,9 @@ def generate_playlist(
         tracks = [e['url'] for e in list(ie_result['entries'])]
 
     pool = Pool(cpu_count())
-    ret_tracks.extend(pool.map(get_audio, tracks))
+    ret_tracks.extend(
+        pool.starmap(get_audio, zip([options]*len(tracks), tracks))
+    )
     pool.close()
 
     return ret_tracks
