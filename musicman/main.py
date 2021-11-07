@@ -138,7 +138,7 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
         src = handle_spotify(SP_CLIENT, SP_SECRET, src)
     else:
         src = ' '.join([src, *args])
-    player = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
 
     src = src.strip('<>')
 
@@ -187,7 +187,7 @@ async def connect(ctx: commands.Context, *args):
     # ms: MusicState = get_ms(ctx.guild.id)
     channel: discord.VoiceChannel = ctx.author.voice.channel
     if channel:
-        ctx.author.voice.channel.connect(cls=LavalinkVoiceClient)
+        await ctx.author.voice.channel.connect(cls=LavalinkVoiceClient)
         await ctx.send(f'musicman connected to {channel.name}')
     else:
         await ctx.send(f'{ctx.author.name} is not in a voice channel')
