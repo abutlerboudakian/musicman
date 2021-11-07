@@ -224,6 +224,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
 
             for track in sp_tracks:
                 result = await player.node.get_tracks(track)
+                print(result)
                 tracks.append(result['tracks'][0])
 
             embed.description = f'{src} - {len(tracks)} tracks'
