@@ -128,6 +128,10 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
     if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
         src = handle_spotify(SP_CLIENT, SP_SECRET, src)
+        if isinstance(src, list):
+            return await ctx.send(
+                'Use the !playlist command to queue playlists'
+            )
     else:
         src = ' '.join([src, *args])
     player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
@@ -224,7 +228,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
 
             embed.description = f'{src} - {len(tracks)} tracks'
         else:
-            src = ' '.join([src, *args])
+            src = ' '.join(src, *args)
 
             src = src.strip('<>')
 
