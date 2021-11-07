@@ -231,7 +231,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
 
             embed.description = f'{src} - {len(tracks)} tracks'
         else:
-            src = ' '.join(src, *args)
+            src = ' '.join([src, *args])
 
             src = src.strip('<>')
 
