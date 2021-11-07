@@ -1,17 +1,13 @@
-import asyncio
+from datetime import timedelta as td
 import os
 import re
-from concurrent.futures import ThreadPoolExecutor
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
 import lavalink
 from lavalink.models import AudioTrack
 from pytimeparse.timeparse import timeparse
-from musicman.util import (
-    LoopState, QueueEntry, MusicState, generate_playlist, apply_context,
-    ffmpeg_options, handle_spotify
-)
+from musicman.util import handle_spotify
 
 
 load_dotenv()
@@ -28,7 +24,10 @@ bot = commands.Bot(
 @bot.event
 async def on_ready():
     bot.lavalink = lavalink.Client(bot.user.id)
-    bot.lavalink.add_node('127.0.0.1', 2333, os.getenv('LAVALINK_PASSWORD'), 'us', 'default-node')
+    bot.lavalink.add_node(
+        '127.0.0.1', 2333, os.getenv('LAVALINK_PASSWORD'), 'us',
+        name='default-node'
+    )
 
     lavalink.add_event_hook(track_hook)
 
@@ -37,7 +36,8 @@ async def track_hook(event):
     if isinstance(event, lavalink.events.QueueEndEvent):
         # When this track_hook receives a "QueueEndEvent" from lavalink.py
         # it indicates that there are no tracks left in the player's queue.
-        # To save on resources, we can tell the bot to disconnect from the voicechannel.
+        # To save on resources, we can tell the bot to disconnect from the
+        #   voicechannel.
         guild_id = int(event.player.guild_id)
         guild = bot.get_guild(guild_id)
         await guild.voice_client.disconnect(force=True)
@@ -54,7 +54,9 @@ class LavalinkVoiceClient(discord.VoiceClient):
     https://discordpy.readthedocs.io/en/latest/api.html#voiceprotocol
     """
 
-    def __init__(self, client: discord.Client, channel: discord.abc.Connectable):
+    def __init__(
+        self, client: discord.Client, channel: discord.abc.Connectable
+    ):
         self.client = client
         self.channel = channel
         # ensure there exists a client already
@@ -119,35 +121,6 @@ class LavalinkVoiceClient(discord.VoiceClient):
         self.cleanup()
 
 
-def get_ms(guild_id: int):
-    if guild_id not in bot.guild_map:
-        bot.guild_map[guild_id] = MusicState(guild_id)
-    return bot.guild_map[guild_id]
-
-
-def play_next(ctx: commands.Context, error):
-    ms: MusicState = get_ms(ctx.guild.id)
-
-    print(error)
-
-    if ms.ls != LoopState.NOW_PLAYING:
-        if len(ms.queue) > 0:
-            if ms.ls == LoopState.QUEUE:
-                ms.queue.append(ms.now_playing)
-            ms.now_playing = ms.queue.pop(0)
-            ms.voiceclient.play(
-                ms.now_playing.audio, after=apply_context(play_next, ctx)
-            )
-        else:
-            ms.now_playing = None
-    else:
-        audio = discord.FFmpegOpusAudio(ms.now_playing.url, **ffmpeg_options())
-        ms.now_playing.audio = audio
-        ms.voiceclient.play(
-            ms.now_playing.audio, after=apply_context(play_next, ctx)
-        )
-
-
 async def play_either(ctx: commands.Context, top: bool, src: str, *args):
 
     SP_CLIENT = os.getenv('SP_CLIENT')
@@ -157,7 +130,9 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
         src = handle_spotify(SP_CLIENT, SP_SECRET, src)
     else:
         src = ' '.join([src, *args])
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
 
     src = src.strip('<>')
 
@@ -172,22 +147,19 @@ async def play_either(ctx: commands.Context, top: bool, src: str, *args):
     embed = discord.Embed(color=discord.Color.blurple())
 
     if results['loadType'] == 'PLAYLIST_LOADED':
-        tracks = results['tracks']
-
-        for track in tracks:
-            # Add all of the tracks from the playlist to the queue.
-            player.add(requester=ctx.author.id, track=track)
-
-        embed.title = 'Playlist Enqueued!'
-        embed.description = f'{results["playlistInfo"]["name"]} - {len(tracks)} tracks'
+        return await ctx.send('Use the !playlist command to queue playlists')
     else:
         track = results['tracks'][0]
         embed.title = 'Track Enqueued'
-        embed.description = f'[{track["info"]["title"]}]({track["info"]["uri"]})'
+        embed.description = (
+            f'[{track["info"]["title"]}]({track["info"]["uri"]})'
+        )
 
-        # You can attach additional information to audiotracks through kwargs, however this involves
-        # constructing the AudioTrack class yourself.
-        track = lavalink.models.AudioTrack(track, ctx.author.id, recommended=True)
+        # You can attach additional information to audiotracks through kwargs,
+        # however this involves constructing the AudioTrack class yourself.
+        track = lavalink.models.AudioTrack(
+            track, ctx.author.id, recommended=True
+        )
         player.add(requester=ctx.author.id, track=track)
 
     await ctx.send(embed=embed)
@@ -227,43 +199,62 @@ async def play(ctx: commands.Context, src: str, *args):
 )
 async def playlist(ctx: commands.Context, src: str, *args):
 
-    YDL_OPTIONS = {
-        'format': 'bestaudio', 'yesplaylist': True,
-        'cookieFile': f'{os.getenv("TMP_AUDIO_PATH")}youtube.com_cookies.txt'
-    }
     SP_CLIENT = os.getenv('SP_CLIENT')
     SP_SECRET = os.getenv('SP_SECRET')
 
-    ms: MusicState = get_ms(ctx.guild.id)
-    if not ms.voiceclient:
-        await connect(ctx, *args)
-    if ms.voiceclient:
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
+
+    if player.is_connected:
 
         await ctx.send(f'Attempting to add {src}')
 
-        loop = asyncio.get_event_loop()
-        tracks = await loop.run_in_executor(
-            ThreadPoolExecutor(), generate_playlist, SP_CLIENT, SP_SECRET,
-            YDL_OPTIONS, src, *args
-        )
+        tracks = []
 
-        for resp in tracks:
-            if resp:
-                url = resp['formats'][0]['url']
-                audio = discord.FFmpegOpusAudio(url, **ffmpeg_options())
-                qe = QueueEntry(ctx.author, url, audio, resp['title'])
-                if ms.voiceclient.is_playing() or ms.voiceclient.is_paused():
-                    ms.queue.append(qe)
-                else:
-                    ms.now_playing = qe
-                    ms.voiceclient.play(
-                        audio, after=apply_context(play_next, ctx)
-                    )
+        embed = discord.Embed(color=discord.Color.blurple())
+        embed.title = 'Playlist Enqueued!'
 
-        await ctx.send(f"Added {src} to queue")
+        if 'open.spotify.com' in [s.lower() for s in src.split('/')]:
+            sp_tracks = handle_spotify(SP_CLIENT, SP_SECRET, src)
+
+            for track in sp_tracks:
+                result = await player.node.get_tracks(track)
+                tracks.append(result['tracks'][0])
+
+            embed.description = f'{src} - {len(tracks)} tracks'
+        else:
+            src = ' '.join([src, *args])
+
+            src = src.strip('<>')
+
+            if not url_rx.match(src):
+                src = f'ytsearch:{src}'
+
+            results = await player.node.get_tracks(src)
+
+            if not (
+                results and results['tracks'] and
+                results['loadType'] == 'PLAYLIST_LOADED'
+            ):
+                return await ctx.send(f'No results found for "{src}"')
+
+            embed.description = (
+                f'{results["playlistInfo"]["name"]} - {len(tracks)} tracks'
+            )
+
+            tracks = results['tracks']
+
+        for track in tracks:
+            player.add(requester=ctx.author.id, track=track)
+
+        await ctx.send(embed=embed)
+
+        if not player.is_playing:
+            await player.play()
 
     else:
-        await ctx.send("musicman can't get in...")
+        await ctx.send("musicman must be in a channel first")
 
 
 @bot.command(
@@ -278,9 +269,12 @@ async def disconnect(ctx: commands.Context, *args):
         # We can't disconnect, if we're not connected.
         return await ctx.send('Not connected.')
 
-    if not ctx.author.voice or (player.is_connected and ctx.author.voice.channel.id != int(player.channel_id)):
-        # Abuse prevention. Users not in voice channels, or not in the same voice channel as the bot
-        # may not disconnect the bot.
+    if not ctx.author.voice or (
+        player.is_connected and
+        ctx.author.voice.channel.id != int(player.channel_id)
+    ):
+        # Abuse prevention. Users not in voice channels, or not in the same
+        # voice channel as the bot may not disconnect the bot.
         return await ctx.send('You\'re not in my voicechannel!')
 
     # Clear the queue to ensure old tracks don't start playing
@@ -300,11 +294,20 @@ async def disconnect(ctx: commands.Context, *args):
 )
 async def np(ctx: commands.Context, *args):
 
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
+
+    current_duration = td(milliseconds=player.position_timestamp)
 
     if player.is_playing:
         current: lavalink.AudioTrack = player.current
-        await ctx.send(f'Currently Playing: {current.title} at {player.position_timestamp}')
+        await ctx.send(
+            f'Currently Playing: {current.title} '
+            f'at {current_duration.total_seconds() // 3600}:'
+            f'{current_duration.total_seconds() // 60}:'
+            f'{int(current_duration.total_seconds()) % 60}'
+        )
     else:
         await ctx.send('Nothing currently playing, queue up a track!')
 
@@ -316,7 +319,9 @@ async def ping(ctx: commands.Context, *args):
 
 @bot.command(name='skip', help='Skips the currently playing song.')
 async def skip(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if player.is_playing:
         await player.skip()
         await ctx.send('Skipped')
@@ -328,7 +333,9 @@ async def skip(ctx: commands.Context, *args):
     name='seek', help='Seeks to a certain point in the current track.'
 )
 async def seek(ctx: commands.Context, timestamp: str, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if player.is_playing:
         try:
             td_ts = int(timeparse(timestamp)) * 1000
@@ -342,7 +349,9 @@ async def seek(ctx: commands.Context, timestamp: str, *args):
 
 @bot.command(name='remove', help='Removes a certain entry from the queue.')
 async def remove(ctx: commands.Context, idx: int, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
 
     if len(player.queue) > 0:
         if idx:
@@ -369,7 +378,9 @@ async def remove(ctx: commands.Context, idx: int, *args):
 
 @bot.command(name='loop', help='Loop the currently playing song.')
 async def loop(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
 
     if player.is_playing:
         player.set_repeat(True)
@@ -383,7 +394,9 @@ async def loop(ctx: commands.Context, *args):
 #     aliases=('ploop',)
 # )
 # async def playloop(ctx: commands.Context, src: str, *args):
-#     player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+#     player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+#         ctx.guild.id
+#     )
 #     player.set_repeat(False)
 #     await play(ctx, src, *args)
 #     await loop(ctx, *args)
@@ -391,7 +404,9 @@ async def loop(ctx: commands.Context, *args):
 
 @bot.command(name='noloop', help='Stop looping')
 async def noloop(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     player.set_repeat(False)
     await ctx.send('Looping disabled')
 
@@ -403,7 +418,9 @@ async def donate(ctx: commands.Context, *args):
 
 @bot.command(name='pause', help='Pauses the currently playing track')
 async def pause(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if player.is_playing:
         current: AudioTrack = player.current
         await player.set_pause(True)
@@ -414,7 +431,9 @@ async def pause(ctx: commands.Context, *args):
 
 @bot.command(name='resume', help='Resume paused music')
 async def resume(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if player.paused:
         await player.set_pause(False)
         await ctx.send(f'Resumed "{player.current.title}"')
@@ -430,7 +449,9 @@ async def resume(ctx: commands.Context, *args):
     )
 )
 async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if len(player.queue) > 0:
         if not end_idx:
             end_idx = 1
@@ -455,7 +476,9 @@ async def move(ctx: commands.Context, start_idx: int, end_idx: int, *args):
 
 @bot.command(name='skipto', help='Skips to a certain position in the queue.')
 async def skipto(ctx: commands.Context, idx: int, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     try:
         qe = player.queue[idx-1]
         while player.current != qe:
@@ -469,7 +492,9 @@ async def skipto(ctx: commands.Context, idx: int, *args):
 
 @bot.command(name='clear', help='Clears the queue.')
 async def clear(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     player.queue.clear()
     await ctx.send('Cleared queue')
 
@@ -522,26 +547,33 @@ async def clean(ctx: commands.Context, *args):
 
 @bot.command(name='shuffle', help='Shuffles the queue.')
 async def shuffle(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     player.set_shuffle(True)
     await ctx.send('Queue shuffled')
 
 
 @bot.command(name='noshuffle', help='Disables queue shuffling.')
 async def unshuffle(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     player.set_shuffle(False)
 
 
 @bot.command(name='queue', help='View the queue.')
 async def view_queue(ctx: commands.Context, *args):
-    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(ctx.guild.id)
+    player: lavalink.DefaultPlayer = bot.lavalink.player_manager.get(
+        ctx.guild.id
+    )
     if len(player.queue) > 0:
         embed = discord.Embed()
         embed.title = 'Queue'
         for i in range(len(player.queue)):
             embed.add_field(
-                name=f'Position {i+1}', value=player.queue[i].title, inline=False
+                name=f'Position {i+1}', value=player.queue[i].title,
+                inline=False
             )
         await ctx.send(embed=embed)
     else:
