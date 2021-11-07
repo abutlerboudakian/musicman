@@ -25,8 +25,7 @@ bot = commands.Bot(
 async def on_ready():
     bot.lavalink = lavalink.Client(bot.user.id)
     bot.lavalink.add_node(
-        '127.0.0.1', 2333, os.getenv('LAVALINK_PASSWORD'), 'us',
-        name='default-node'
+        'localhost', 2333, os.getenv('LAVALINK_PASSWORD'), 'us', 'default-node'
     )
 
     lavalink.add_event_hook(track_hook)
