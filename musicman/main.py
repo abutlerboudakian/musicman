@@ -25,7 +25,8 @@ bot = commands.Bot(
 async def on_ready():
     bot.lavalink = lavalink.Client(bot.user.id)
     bot.lavalink.add_node(
-        'localhost', 2333, os.getenv('LAVALINK_PASSWORD'), 'us', 'default-node'
+        'localhost', 2333, os.getenv('LAVALINK_PASSWORD'), 'us',
+        name='default-node'
     )
 
     lavalink.add_event_hook(track_hook)
@@ -68,7 +69,7 @@ class LavalinkVoiceClient(discord.VoiceClient):
                     2333,
                     os.getenv('LAVALINK_PASSWORD'),
                     'us',
-                    'default-node')
+                    name='default-node')
             self.lavalink = self.client.lavalink
 
     async def on_voice_server_update(self, data):
