@@ -24,6 +24,25 @@ bot = commands.Bot(
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
 
+
+@bot.event
+async def on_ready():
+    bot.lavalink = lavalink.Client(bot.user.id)
+    bot.lavalink.add_node('127.0.0.1', 2333, os.getenv('LAVALINK_PASSWORD'), 'us', 'default-node')
+
+    lavalink.add_event_hook(track_hook)
+
+
+async def track_hook(event):
+    if isinstance(event, lavalink.events.QueueEndEvent):
+        # When this track_hook receives a "QueueEndEvent" from lavalink.py
+        # it indicates that there are no tracks left in the player's queue.
+        # To save on resources, we can tell the bot to disconnect from the voicechannel.
+        guild_id = int(event.player.guild_id)
+        guild = bot.get_guild(guild_id)
+        await guild.voice_client.disconnect(force=True)
+
+
 url_rx = re.compile(r'https?://(?:www\.)?.+')
 
 
@@ -46,7 +65,7 @@ class LavalinkVoiceClient(discord.VoiceClient):
             self.client.lavalink.add_node(
                     'localhost',
                     2333,
-                    'youshallnotpass',
+                    os.getenv('LAVALINK_PASSWORD'),
                     'us',
                     'default-node')
             self.lavalink = self.client.lavalink
