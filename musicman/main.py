@@ -223,9 +223,10 @@ async def playlist(ctx: commands.Context, src: str, *args):
             sp_tracks = handle_spotify(SP_CLIENT, SP_SECRET, src)
 
             for track in sp_tracks:
-                print(track)
-                result = await player.node.get_tracks(track)
-                print(result)
+                track_url = track
+                if not url_rx.match(track_url):
+                    track_url = f'ytsearch:{src}'
+                result = await player.node.get_tracks(track_url)
                 tracks.append(result['tracks'][0])
 
             embed.description = f'{src} - {len(tracks)} tracks'
