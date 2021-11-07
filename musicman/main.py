@@ -225,7 +225,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
             for track in sp_tracks:
                 track_url = track
                 if not url_rx.match(track_url):
-                    track_url = f'ytsearch:{src}'
+                    track_url = f'ytsearch:{track_url}'
                 result = await player.node.get_tracks(track_url)
                 tracks.append(result['tracks'][0])
 
