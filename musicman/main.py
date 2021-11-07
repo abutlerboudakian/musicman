@@ -223,6 +223,7 @@ async def playlist(ctx: commands.Context, src: str, *args):
             sp_tracks = handle_spotify(SP_CLIENT, SP_SECRET, src)
 
             for track in sp_tracks:
+                print(track)
                 result = await player.node.get_tracks(track)
                 print(result)
                 tracks.append(result['tracks'][0])
