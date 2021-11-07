@@ -23,10 +23,6 @@ bot = commands.Bot(
     command_prefix='!',
     help_command=commands.DefaultHelpCommand(no_category='Commands')
 )
-lavalink_client = lavalink.Client(bot.user.id)
-lavalink_client.add_node(
-    'localhost', 2333, os.getenv('LAVALINK_PASSWORD'), 'us', 'default-node'
-)
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
 
