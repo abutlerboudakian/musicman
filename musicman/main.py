@@ -29,18 +29,18 @@ async def on_ready():
         name='default-node'
     )
 
-    lavalink.add_event_hook(track_hook)
+    # lavalink.add_event_hook(track_hook)
 
 
-async def track_hook(event):
-    if isinstance(event, lavalink.events.QueueEndEvent):
-        # When this track_hook receives a "QueueEndEvent" from lavalink.py
-        # it indicates that there are no tracks left in the player's queue.
-        # To save on resources, we can tell the bot to disconnect from the
-        #   voicechannel.
-        guild_id = int(event.player.guild_id)
-        guild = bot.get_guild(guild_id)
-        await guild.voice_client.disconnect(force=True)
+# async def track_hook(event):
+#     if isinstance(event, lavalink.events.QueueEndEvent):
+#         # When this track_hook receives a "QueueEndEvent" from lavalink.py
+#         # it indicates that there are no tracks left in the player's queue.
+#         # To save on resources, we can tell the bot to disconnect from the
+#         #   voicechannel.
+#         guild_id = int(event.player.guild_id)
+#         guild = bot.get_guild(guild_id)
+#         await guild.voice_client.disconnect(force=True)
 
 
 url_rx = re.compile(r'https?://(?:www\.)?.+')
